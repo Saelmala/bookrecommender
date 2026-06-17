@@ -9,20 +9,11 @@ import {
   Chip,
   Input,
   Spinner,
-  Tooltip,
 } from "@heroui/react";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  BookmarkCheck,
-  BookmarkPlus,
-  BookOpen,
-  Compass,
-  MapPin,
-  Search,
-  Sparkles,
-} from "lucide-react";
+import { useMemo, useState } from "react";
+import { BookOpen, Compass, MapPin, Search, Sparkles } from "lucide-react";
 
 type Book = {
   key: string;
@@ -31,11 +22,6 @@ type Book = {
   coverImage: string | null;
   year?: number;
   subjects?: string[];
-};
-
-type SavedBook = Book & {
-  id: string;
-  savedAt: string;
 };
 
 type RecommendationPayload = {
@@ -67,60 +53,11 @@ export default function Home() {
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [savedBooks, setSavedBooks] = useState<SavedBook[]>([]);
-  const [savedStates, setSavedStates] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
-  const [savedLoading, setSavedLoading] = useState(false);
-  const [savedError, setSavedError] = useState<string | null>(null);
-  const [savedToast, setSavedToast] = useState<string | null>(null);
 
   const hasResults = useMemo(
     () => Boolean(seed) || recommendations.length > 0,
     [seed, recommendations],
   );
-
-  const fetchSavedBooks = useCallback(async () => {
-    setSavedLoading(true);
-    setSavedError(null);
-
-    try {
-      const response = await fetch("/api/saved-books", { cache: "no-store" });
-      const data = (await response.json()) as {
-        items?: SavedBook[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Failed to load saved books.");
-      }
-
-      const items = data.items ?? [];
-      setSavedBooks(items);
-      setSavedStates((prev) => {
-        const next = { ...prev };
-        items.forEach((item) => {
-          next[item.key] = "saved";
-        });
-        return next;
-      });
-    } catch (err) {
-      console.error(err);
-      setSavedError("We couldn't load your saved books.");
-    } finally {
-      setSavedLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSavedBooks();
-  }, [fetchSavedBooks]);
-
-  useEffect(() => {
-    if (!savedToast) {
-      return;
-    }
-    const timeout = setTimeout(() => setSavedToast(null), 4000);
-    return () => clearTimeout(timeout);
-  }, [savedToast]);
 
   const fetchRecommendations = async (searchTerm: string) => {
     const trimmed = searchTerm.trim();
@@ -160,7 +97,9 @@ export default function Home() {
       console.error(err);
       setSeed(null);
       setRecommendations([]);
-      setError("Something went wrong while reaching the recommendation service.");
+      setError(
+        "Something went wrong while reaching the recommendation service.",
+      );
     } finally {
       setIsLoading(false);
     }
@@ -174,45 +113,6 @@ export default function Home() {
   const handleQuickPick = (title: string) => {
     setQuery(title);
     fetchRecommendations(title);
-  };
-
-  const handleSaveBook = async (book: Book) => {
-    setSavedStates((prev) => ({ ...prev, [book.key]: "saving" }));
-    setSavedToast(null);
-
-    try {
-      const response = await fetch("/api/saved-books", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ book }),
-      });
-
-      const data = (await response.json()) as {
-        id?: string;
-        savedAt?: string;
-        error?: string;
-      };
-
-      if (!response.ok || !data.id || !data.savedAt) {
-        throw new Error(data.error ?? "Failed to save the book.");
-      }
-
-      setSavedStates((prev) => ({ ...prev, [book.key]: "saved" }));
-      setSavedBooks((prev) => {
-        const alreadySaved = prev.some((item) => item.key === book.key);
-        if (alreadySaved) {
-          return prev;
-        }
-        return [{ ...book, id: data.id, savedAt: data.savedAt }, ...prev];
-      });
-      setSavedToast(`Saved "${book.title}" to your shelf.`);
-    } catch (err) {
-      console.error(err);
-      setSavedStates((prev) => ({ ...prev, [book.key]: "error" }));
-      setSavedToast("We couldn't save that book. Please try again.");
-    }
   };
 
   return (
@@ -234,7 +134,10 @@ export default function Home() {
                 size="sm"
                 variant="flat"
                 startContent={<Compass className="h-3 w-3" />}
-                className="bg-emerald-100 text-emerald-700"
+                classNames={{
+                  base: "bg-emerald-100 text-emerald-700 px-3 py-1",
+                  content: "ps-1.5",
+                }}
               >
                 Discover 10 new reads
               </Chip>
@@ -251,22 +154,16 @@ export default function Home() {
         </CardHeader>
 
         <CardBody className="space-y-10 p-8 pt-6">
-          {savedToast ? (
-            <div className="rounded-full border border-violet-200/70 bg-white/90 px-5 py-3 text-sm text-slate-600 shadow-sm">
-              {savedToast}
-            </div>
-          ) : null}
-
           <form
             onSubmit={handleSubmit}
-            className="flex w-full flex-col gap-5 sm:flex-row"
+            className="flex w-full flex-col gap-5 sm:flex-row sm:items-center"
           >
             <Input
               value={query}
               onValueChange={setQuery}
               variant="bordered"
               color="primary"
-              radius="full"
+              radius="lg"
               type="search"
               classNames={{
                 inputWrapper:
@@ -274,19 +171,19 @@ export default function Home() {
                 input: "text-base text-slate-700 placeholder:text-slate-400",
               }}
               size="lg"
-              startContent={<Search className="h-5 w-5 text-violet-400" />}
+              startContent={<Search className="me-3 h-5 w-5 text-violet-400" />}
               placeholder="Try 'The Name of the Wind' or 'Circe'"
             />
             <Button
               type="submit"
               size="lg"
-              radius="full"
+              radius="lg"
               color="primary"
               className="bg-gradient-to-r from-violet-200 via-sky-200 to-emerald-200 px-10 py-5 font-semibold text-slate-800 shadow-[0_12px_55px_-25px_rgba(129,140,248,0.9)] hover:scale-[1.01] hover:from-violet-200/90 hover:via-sky-200/90 hover:to-emerald-200/90 active:scale-95"
               isLoading={isLoading}
               spinner={<Spinner color="current" size="sm" />}
             >
-              {isLoading ? "Searching..." : "Get recommendations"}
+              {isLoading ? "Searching..." : "Go!"}
             </Button>
           </form>
 
@@ -456,40 +353,6 @@ export default function Home() {
                             ) : null}
                           </div>
                         </div>
-                        <div className="flex justify-end">
-                          <Tooltip
-                            color="primary"
-                            content={
-                              savedStates[book.key] === "saved"
-                                ? "Added to your saved shelf"
-                                : savedStates[book.key] === "error"
-                                  ? "Tap to try saving again"
-                                  : "Save this recommendation"
-                            }
-                          >
-                            <Button
-                              size="sm"
-                              radius="full"
-                              variant="flat"
-                              className="bg-violet-100 text-violet-700 hover:bg-violet-200"
-                              onPress={() => handleSaveBook(book)}
-                              isLoading={savedStates[book.key] === "saving"}
-                              startContent={
-                                savedStates[book.key] === "saved" ? (
-                                  <BookmarkCheck className="h-4 w-4" />
-                                ) : (
-                                  <BookmarkPlus className="h-4 w-4" />
-                                )
-                              }
-                            >
-                              {savedStates[book.key] === "saved"
-                                ? "Saved"
-                                : savedStates[book.key] === "error"
-                                  ? "Retry"
-                                  : "Save to shelf"}
-                            </Button>
-                          </Tooltip>
-                        </div>
                       </CardBody>
                       <CardFooter className="flex items-center justify-between border-t border-slate-200/70 px-5 py-4 text-xs text-slate-500">
                         <span>Data from Open Library</span>
@@ -516,79 +379,6 @@ export default function Home() {
                 </p>
               </div>
             ) : null}
-          </section>
-
-          <section className="space-y-4 rounded-3xl border border-slate-200/70 bg-white/85 p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3 text-sm text-slate-600">
-                <BookmarkPlus className="h-5 w-5 text-violet-400" />
-                Your saved shelf
-              </div>
-              {savedLoading ? (
-                <span className="text-xs uppercase tracking-[0.3em] text-slate-500">
-                  Loading…
-                </span>
-              ) : (
-                <span className="text-xs uppercase tracking-[0.3em] text-emerald-500">
-                  {savedBooks.length} saved
-                </span>
-              )}
-            </div>
-
-            {savedError ? (
-              <Card className="border border-rose-200 bg-rose-50 text-rose-700">
-                <CardBody className="text-sm">{savedError}</CardBody>
-              </Card>
-            ) : null}
-
-            {!savedError && !savedLoading && savedBooks.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white p-6 text-center text-sm text-slate-500">
-                Books you save will appear here for quick reference.
-              </div>
-            ) : null}
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              {savedBooks.map((book) => (
-                <Card
-                  key={book.id}
-                  className="border border-violet-100 bg-white/90 shadow-sm"
-                >
-                  <CardBody className="flex gap-5 p-5">
-                    <div className="relative h-28 w-20 shrink-0 overflow-hidden rounded-xl border border-violet-100 bg-white">
-                      {book.coverImage ? (
-                        <Image
-                          src={book.coverImage}
-                          alt={book.title}
-                          fill
-                          sizes="(min-width: 640px) 120px, 80px"
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-violet-400">
-                          <BookOpen className="h-7 w-7" />
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex flex-1 flex-col justify-between">
-                      <div>
-                        <h3 className="text-base font-semibold text-slate-900">
-                          {book.title}
-                        </h3>
-                        <p className="text-sm text-slate-600">{book.author}</p>
-                        {book.year ? (
-                          <span className="text-xs text-slate-500">
-                            First published {book.year}
-                          </span>
-                        ) : null}
-                      </div>
-                      <span className="text-xs text-slate-400">
-                        Saved {new Date(book.savedAt).toLocaleString()}
-                      </span>
-                    </div>
-                  </CardBody>
-                </Card>
-              ))}
-            </div>
           </section>
         </CardBody>
       </Card>
