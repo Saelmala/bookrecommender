@@ -1,18 +1,18 @@
 "use client";
 
 import {
-  Button,
+  Autocomplete,
+  AutocompleteItem,
   Card,
   CardBody,
   CardFooter,
   CardHeader,
   Chip,
-  Input,
   Spinner,
 } from "@heroui/react";
 import { AnimatePresence, motion } from "framer-motion";
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useRef, useState } from "react";
 import { BookOpen, Compass, MapPin, Search, Sparkles } from "lucide-react";
 
 type Book = {
@@ -24,9 +24,14 @@ type Book = {
   subjects?: string[];
 };
 
+type SearchPayload = {
+  matches?: Book[];
+  message?: string;
+  error?: string;
+};
+
 type RecommendationPayload = {
-  seed: Book | null;
-  recommendations: Book[];
+  recommendations?: Book[];
   message?: string;
   error?: string;
 };
@@ -48,29 +53,62 @@ const cardMotion = {
 
 export default function Home() {
   const [query, setQuery] = useState("");
+  const [options, setOptions] = useState<Book[]>([]);
   const [seed, setSeed] = useState<Book | null>(null);
   const [recommendations, setRecommendations] = useState<Book[]>([]);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingRecs, setIsLoadingRecs] = useState(false);
 
-  const hasResults = useMemo(
-    () => Boolean(seed) || recommendations.length > 0,
-    [seed, recommendations],
-  );
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchRecommendations = async (searchTerm: string) => {
-    const trimmed = searchTerm.trim();
-    if (!trimmed) {
+  const hasResults = Boolean(seed);
+
+  const fetchSuggestions = async (term: string) => {
+    setIsSearching(true);
+    try {
+      const params = new URLSearchParams({ query: term });
+      const response = await fetch(`/api/search?${params.toString()}`, {
+        method: "GET",
+      });
+      const data = (await response.json()) as SearchPayload;
+      if (response.ok) {
+        setOptions(data.matches ?? []);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleInputChange = (value: string) => {
+    setQuery(value);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+    const trimmed = value.trim();
+    if (trimmed.length < 2) {
+      setOptions([]);
+      setIsSearching(false);
       return;
     }
+    debounceRef.current = setTimeout(() => fetchSuggestions(trimmed), 300);
+  };
 
-    setIsLoading(true);
-    setError(null);
+  const fetchRecommendations = async (book: Book) => {
+    setSeed(book);
+    setRecommendations([]);
     setInfoMessage(null);
+    setError(null);
+    setIsLoadingRecs(true);
 
     try {
-      const params = new URLSearchParams({ query: trimmed });
+      const params = new URLSearchParams({ key: book.key });
+      if (book.year) {
+        params.set("year", String(book.year));
+      }
       const response = await fetch(`/api/recommend?${params.toString()}`, {
         method: "GET",
       });
@@ -78,13 +116,10 @@ export default function Home() {
       const data = (await response.json()) as RecommendationPayload;
 
       if (!response.ok) {
-        setSeed(null);
-        setRecommendations([]);
         setError(data.error ?? "We could not get recommendations right now.");
         return;
       }
 
-      setSeed(data.seed ?? null);
       setRecommendations(data.recommendations ?? []);
 
       if (!data.recommendations?.length) {
@@ -95,24 +130,46 @@ export default function Home() {
       }
     } catch (err) {
       console.error(err);
-      setSeed(null);
-      setRecommendations([]);
       setError(
         "Something went wrong while reaching the recommendation service.",
       );
     } finally {
-      setIsLoading(false);
+      setIsLoadingRecs(false);
     }
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    fetchRecommendations(query);
+  const handleSelect = (key: React.Key | null) => {
+    if (!key) {
+      return;
+    }
+    const book = options.find((item) => item.key === key);
+    if (!book) {
+      return;
+    }
+    setQuery(book.title);
+    fetchRecommendations(book);
   };
 
-  const handleQuickPick = (title: string) => {
+  const handleQuickPick = async (title: string) => {
     setQuery(title);
-    fetchRecommendations(title);
+    setOptions([]);
+    setError(null);
+    setInfoMessage(null);
+    setIsSearching(true);
+    try {
+      const params = new URLSearchParams({ query: title });
+      const response = await fetch(`/api/search?${params.toString()}`, {
+        method: "GET",
+      });
+      const data = (await response.json()) as SearchPayload;
+      if (response.ok && data.matches?.length) {
+        await fetchRecommendations(data.matches[0]);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   return (
@@ -146,46 +203,72 @@ export default function Home() {
               Find your next read in seconds.
             </h1>
             <p className="max-w-xl text-sm text-slate-600 sm:text-base">
-              Search for a book you adore and we&apos;ll surface ten stunning
-              recommendations curated from Open Library—tailored by topic,
-              author, and vibe.
+              Start typing a book you adore, pick it from the list, and
+              we&apos;ll surface ten stunning recommendations curated from Open
+              Library—tailored by genre.
             </p>
           </div>
         </CardHeader>
 
         <CardBody className="space-y-10 p-8 pt-6">
-          <form
-            onSubmit={handleSubmit}
-            className="flex w-full flex-col gap-5 sm:flex-row sm:items-center"
-          >
-            <Input
-              value={query}
-              onValueChange={setQuery}
-              variant="bordered"
-              color="primary"
-              radius="lg"
-              type="search"
-              classNames={{
+          <Autocomplete
+            aria-label="Search for a book"
+            inputValue={query}
+            onInputChange={handleInputChange}
+            onSelectionChange={handleSelect}
+            items={options}
+            isLoading={isSearching}
+            menuTrigger="input"
+            allowsCustomValue
+            radius="lg"
+            size="lg"
+            placeholder="Start typing a book title…"
+            startContent={<Search className="h-5 w-5 shrink-0 text-violet-400" />}
+            inputProps={{
+              classNames: {
                 inputWrapper:
                   "bg-white/90 border-violet-200 px-6 py-4 shadow-[0_10px_40px_-25px_rgba(148,163,184,0.9)] data-[hover=true]:border-violet-300",
-                input: "text-base text-slate-700 placeholder:text-slate-400",
-              }}
-              size="lg"
-              startContent={<Search className="me-3 h-5 w-5 text-violet-400" />}
-              placeholder="Try 'The Name of the Wind' or 'Circe'"
-            />
-            <Button
-              type="submit"
-              size="lg"
-              radius="lg"
-              color="primary"
-              className="bg-gradient-to-r from-violet-200 via-sky-200 to-emerald-200 px-10 py-5 font-semibold text-slate-800 shadow-[0_12px_55px_-25px_rgba(129,140,248,0.9)] hover:scale-[1.01] hover:from-violet-200/90 hover:via-sky-200/90 hover:to-emerald-200/90 active:scale-95"
-              isLoading={isLoading}
-              spinner={<Spinner color="current" size="sm" />}
-            >
-              {isLoading ? "Searching..." : "Go!"}
-            </Button>
-          </form>
+                input: "ms-2 text-base text-slate-700 placeholder:text-slate-400",
+              },
+            }}
+            listboxProps={{
+              emptyContent:
+                query.trim().length < 2
+                  ? "Type at least two characters…"
+                  : "No matching books found.",
+            }}
+          >
+            {(book) => (
+              <AutocompleteItem key={book.key} textValue={book.title}>
+                <div className="flex items-center gap-3">
+                  <div className="relative h-14 w-10 shrink-0 overflow-hidden rounded-md border border-violet-100 bg-white">
+                    {book.coverImage ? (
+                      <Image
+                        src={book.coverImage}
+                        alt={book.title}
+                        fill
+                        sizes="40px"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-violet-400">
+                        <BookOpen className="h-4 w-4" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-slate-900">
+                      {book.title}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {book.author}
+                      {book.year ? ` · ${book.year}` : ""}
+                    </p>
+                  </div>
+                </div>
+              </AutocompleteItem>
+            )}
+          </Autocomplete>
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs uppercase tracking-[0.3em] text-slate-500">
@@ -244,7 +327,7 @@ export default function Home() {
                 </div>
                 <div className="flex flex-1 flex-col gap-3">
                   <span className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.25em] text-violet-500">
-                    Your seed book
+                    Recommendations based on
                   </span>
                   <h2 className="text-2xl font-semibold text-slate-900 md:text-3xl">
                     {seed.title}
@@ -269,7 +352,7 @@ export default function Home() {
                 </div>
               </div>
             </motion.section>
-          ) : !hasResults ? (
+          ) : !hasResults && !isSearching ? (
             <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-10 text-center">
               <h2 className="text-xl font-semibold text-slate-900">
                 Start with a book you love.
@@ -282,17 +365,21 @@ export default function Home() {
           ) : null}
 
           <section className="space-y-4">
-            {recommendations.length > 0 && (
+            {seed && (recommendations.length > 0 || isLoadingRecs) ? (
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 text-sm text-slate-600">
                   <Sparkles className="h-5 w-5 text-violet-400" />
                   Based on your taste, you might also enjoy:
                 </div>
-                <span className="text-xs uppercase tracking-[0.3em] text-emerald-500">
-                  {recommendations.length} curated picks
-                </span>
+                {isLoadingRecs ? (
+                  <Spinner size="sm" color="secondary" />
+                ) : (
+                  <span className="text-xs uppercase tracking-[0.3em] text-emerald-500">
+                    {recommendations.length} curated picks
+                  </span>
+                )}
               </div>
-            )}
+            ) : null}
 
             <div className="grid gap-6 sm:grid-cols-2">
               <AnimatePresence mode="popLayout">
@@ -371,11 +458,12 @@ export default function Home() {
               </AnimatePresence>
             </div>
 
-            {!recommendations.length && !seed && !isLoading && !error ? (
+            {!hasResults && !isSearching && !isLoadingRecs && !error ? (
               <div className="flex flex-col items-center gap-3 rounded-3xl border border-dashed border-slate-200/80 bg-white/70 p-8 text-center text-slate-500">
                 <Compass className="h-8 w-8 text-slate-400" />
                 <p className="text-sm">
-                  Drop in a title to reveal ten serendipitous recommendations.
+                  Start typing a title and pick a book to reveal ten
+                  serendipitous recommendations.
                 </p>
               </div>
             ) : null}
