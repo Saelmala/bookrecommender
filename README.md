@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📚 Book Recommendator
+# 📚 Book Recommender
 
 Discover your next favorite book in seconds. Type in a title you already love and the app serves up ten gorgeous recommendations powered by Open Library data, wrapped in a modern HeroUI interface.
 
@@ -68,4 +68,4 @@ npm run lint    # lint the codebase with ESLint
 
 ---
 
-Have an idea to take the recommendator further? Open an issue or drop a PR — contributions are always welcome! 🙌
+Have an idea to take the recommender further? Open an issue or drop a PR — contributions are always welcome! 🙌

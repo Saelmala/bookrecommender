@@ -74,7 +74,7 @@ export async function GET(request: Request) {
 
     const searchResponse = await fetch(searchUrl, {
       headers: {
-        "User-Agent": "BookRecommendator/1.0 (https://github.com/Saelmala)",
+        "User-Agent": "BookRecommender/1.0 (https://github.com/Saelmala)",
       },
       cache: "no-store",
     });
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
 
       const subjectResponse = await fetch(subjectUrl, {
         headers: {
-          "User-Agent": "BookRecommendator/1.0 (https://github.com/Saelmala)",
+          "User-Agent": "BookRecommender/1.0 (https://github.com/Saelmala)",
         },
         cache: "no-store",
       });
