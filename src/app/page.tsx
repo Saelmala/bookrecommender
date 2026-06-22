@@ -252,7 +252,7 @@ export default function Home() {
             onSelectionChange={handleSelect}
             items={options}
             isLoading={isSearching}
-            menuTrigger="input"
+            menuTrigger="focus"
             allowsCustomValue
             radius="lg"
             size="lg"
