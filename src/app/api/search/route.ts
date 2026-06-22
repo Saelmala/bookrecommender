@@ -10,7 +10,6 @@ type SearchDoc = {
   author_name?: string[];
   cover_i?: number;
   first_publish_year?: number;
-  subject?: string[];
 };
 
 type Book = {
@@ -19,7 +18,6 @@ type Book = {
   author: string;
   coverImage: string | null;
   year?: number;
-  subjects?: string[];
 };
 
 const coverUrlFromId = (coverId?: number | null) =>
@@ -31,7 +29,6 @@ const mapDocToBook = (doc: SearchDoc): Book => ({
   author: doc.author_name?.[0] ?? "Unknown author",
   coverImage: coverUrlFromId(doc.cover_i),
   year: doc.first_publish_year,
-  subjects: doc.subject,
 });
 
 const createErrorResponse = (message: string, status = 500) =>
@@ -52,15 +49,19 @@ export async function GET(request: Request) {
   try {
     const searchUrl = new URL(`${OPEN_LIBRARY_BASE}/search.json`);
     searchUrl.searchParams.set("q", query);
-    searchUrl.searchParams.set("limit", "25");
+    searchUrl.searchParams.set("limit", String(MAX_MATCHES));
+    // Only the fields the dropdown renders — dropping `subject` roughly halves
+    // Open Library's response time and payload size.
     searchUrl.searchParams.set(
       "fields",
-      "key,title,author_name,cover_i,first_publish_year,subject",
+      "key,title,author_name,cover_i,first_publish_year",
     );
 
     const response = await fetch(searchUrl, {
       headers: { "User-Agent": USER_AGENT },
-      cache: "no-store",
+      // Cache identical queries for a day so repeats are instant (book search
+      // results are effectively static); Open Library itself is slow & uncached.
+      next: { revalidate: 86400 },
     });
 
     if (!response.ok) {

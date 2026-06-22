@@ -32,6 +32,7 @@ type SearchPayload = {
 
 type RecommendationPayload = {
   recommendations?: Book[];
+  seedSubjects?: string[];
   message?: string;
   error?: string;
 };
@@ -62,24 +63,37 @@ export default function Home() {
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const hasResults = Boolean(seed);
 
   const fetchSuggestions = async (term: string) => {
+    // Cancel any in-flight search so a slow earlier request can't clobber the
+    // latest query — keeps the dropdown in sync with what's typed.
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
     setIsSearching(true);
     try {
       const params = new URLSearchParams({ query: term });
       const response = await fetch(`/api/search?${params.toString()}`, {
         method: "GET",
+        signal: controller.signal,
       });
       const data = (await response.json()) as SearchPayload;
       if (response.ok) {
         setOptions(data.matches ?? []);
       }
     } catch (err) {
-      console.error(err);
+      if ((err as Error)?.name !== "AbortError") {
+        console.error(err);
+      }
     } finally {
-      setIsSearching(false);
+      if (searchAbortRef.current === controller) {
+        searchAbortRef.current = null;
+        setIsSearching(false);
+      }
     }
   };
 
@@ -121,6 +135,13 @@ export default function Home() {
       }
 
       setRecommendations(data.recommendations ?? []);
+      if (data.seedSubjects?.length) {
+        setSeed((current) =>
+          current && current.key === book.key
+            ? { ...current, subjects: data.seedSubjects }
+            : current,
+        );
+      }
 
       if (!data.recommendations?.length) {
         setInfoMessage(

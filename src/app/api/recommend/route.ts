@@ -50,7 +50,12 @@ const createErrorResponse = (message: string, status = 500) =>
   NextResponse.json({ error: message }, { status });
 
 const olFetch = (url: string | URL) =>
-  fetch(url, { headers: { "User-Agent": USER_AGENT }, cache: "no-store" });
+  fetch(url, {
+    headers: { "User-Agent": USER_AGENT },
+    // Open Library is slow; cache identical lookups for a day so repeat
+    // recommendations are served instantly.
+    next: { revalidate: 86400 },
+  });
 
 const GENERIC_SUBJECTS = new Set([
   "fiction",
@@ -185,6 +190,9 @@ const recommendByKey = async (key: string, year?: number) => {
   );
 
   return NextResponse.json({
+    // The search dropdown omits subjects (for speed), so return the seed's
+    // genres here for the "based on" card to display.
+    seedSubjects: subjects.slice(0, 4),
     recommendations: recommendations.slice(0, MAX_RESULTS),
     message: recommendations.length
       ? undefined
