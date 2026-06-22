@@ -64,10 +64,21 @@ export default function Home() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
+  const searchCacheRef = useRef<Map<string, Book[]>>(new Map());
 
   const hasResults = Boolean(seed);
 
   const fetchSuggestions = async (term: string) => {
+    const cacheKey = term.toLowerCase();
+    const cached = searchCacheRef.current.get(cacheKey);
+    if (cached) {
+      searchAbortRef.current?.abort();
+      searchAbortRef.current = null;
+      setOptions(cached);
+      setIsSearching(false);
+      return;
+    }
+
     // Cancel any in-flight search so a slow earlier request can't clobber the
     // latest query — keeps the dropdown in sync with what's typed.
     searchAbortRef.current?.abort();
@@ -83,7 +94,9 @@ export default function Home() {
       });
       const data = (await response.json()) as SearchPayload;
       if (response.ok) {
-        setOptions(data.matches ?? []);
+        const matches = data.matches ?? [];
+        searchCacheRef.current.set(cacheKey, matches);
+        setOptions(matches);
       }
     } catch (err) {
       if ((err as Error)?.name !== "AbortError") {
@@ -244,12 +257,15 @@ export default function Home() {
             radius="lg"
             size="lg"
             placeholder="Start typing a book title…"
-            startContent={<Search className="h-5 w-5 shrink-0 text-violet-400" />}
+            startContent={
+              <Search className="h-5 w-5 shrink-0 text-violet-400" />
+            }
             inputProps={{
               classNames: {
                 inputWrapper:
                   "bg-white/90 border-violet-200 px-6 py-4 shadow-[0_10px_40px_-25px_rgba(148,163,184,0.9)] data-[hover=true]:border-violet-300",
-                input: "ms-2 text-base text-slate-700 placeholder:text-slate-400",
+                input:
+                  "ms-2 text-base text-slate-700 placeholder:text-slate-400",
               },
             }}
             listboxProps={{
